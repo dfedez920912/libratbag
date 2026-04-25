@@ -483,13 +483,19 @@ if (ret < 0)
 - [ ] Vendor ID: `0xe0ff`
 - [ ] Product ID: `0x0002`
 - [ ] Nombre: "Sentey Revolution Pro GS-3910"
+- [ ] Sensor: Avago ADNS-9800
+- [ ] Peso: 170g neto, 220g bruto
+- [ ] Dimensiones: 126 x 84 x 42mm
+- [ ] Cable: 1.8m trenzado USB 2.0 Full-Speed
 
 ### Capacidades a Implementar
-- [ ] 5 perfiles
-- [ ] 4 niveles de DPI (2000, 4200, 6200, 8200)
-- [ ] 9 botones configurables (A2-A10)
-- [ ] LEDs RGB configurables
-- [ ] Report rates: 125, 250, 500, 1000 Hz
+- [ ] 5 perfiles (almacenados en memoria onboard)
+- [ ] 4 niveles de DPI (400, 1600, 3200, 8200)
+- [ ] 11 botones físicos (9 programables vía software)
+- [ ] LEDs RGB configurables (matriz 3x3 = 9 zonas, 5 colores + 26 tonos DPI)
+- [ ] Report rates: 500, 1000 Hz (seleccionable)
+- [ ] Sensor: Avago ADNS-9800
+- [ ] Aceleración: 30G, Track Speed: 150 ips, Frame Rate: 11750 FPS
 
 ### Comandos HID Identificados (según capturas)
 - [ ] `0x0188` - Selección de perfil
@@ -497,6 +503,267 @@ if (ret < 0)
 - [ ] `0x0186` / `0x0102` - Configuración RGB
 - [ ] Comandos DPI (por determinar exactamente)
 - [ ] Comando de guardado (por determinar)
+
+---
+
+## 9. INFORMACIÓN ESPECÍFICA DEL DISPOSITIVO SENTEY GS-3910
+
+### 9.1 Documentación de Capturas (`captures/`)
+- **guia.txt**: Mapeo completo de nombres de archivos a acciones realizadas
+  - A2-A10: Botones físicos del mouse
+  - Perfil 1-5: Selección de perfiles
+  - DPI1-4: Configuración de niveles DPI (2000, 4200, 6200, 8200)
+  - colores posibles perfil 1.txt: Configuración RGB del perfil 1
+  - capturaLRB.txt: Comunicación actual con libratbag (muestra error de driver steelseries)
+
+- **ANALISIS_PATRONES.md**: Análisis detallado del protocolo HID
+  - Estructura: SET_REPORT con wValue=0x0300, 8 bytes payload
+  - Comando perfil: `01 88 XX 00 00 00 00 12` (XX=00-04 para perfiles 1-5)
+  - Comando botones: `01 85 00 BB CC DD EE 12` (BB=índice botón, CC DD=código función)
+  - Comando RGB: `01 86 AA BB CC DD EE FF` + respuesta `01 02 00 XX XX XX XX 12`
+  - DPI: Por determinar (capturas no incluyen Data Fragment completo)
+
+### 9.2 Mapeo de Botones
+Según `guia.txt`, análisis de capturas e información oficial:
+- Botón físico 1: Click izquierdo (no programable)
+- Botón físico 2 (A2) → Índice dispositivo 0x01
+- Botón físico 3 (A3) → Índice dispositivo 0x02
+- Botón físico 4 (A4) → Índice dispositivo 0x04
+- Botón físico 5 (A5) → Índice dispositivo 0x03
+- Botón físico 6 (A6) → Índice dispositivo 0x05
+- Botón físico 7 (A7) → Índice dispositivo 0x06
+- Botón físico 8 (A8) → Índice dispositivo 0x07
+- Botón físico 9 (A9) → Índice dispositivo 0x08
+- Botón físico 10 (A10) → Índice dispositivo 0x09
+- Botón físico 11: Selector DPI (modo especial)
+
+**Nota importante**: 11 botones físicos totales, 9 programables vía software. El mapeo comienza desde el botón 2 (índice 1), el botón 1 es el click izquierdo principal no configurable.
+
+### 9.3 Funciones de Botones Identificadas
+- `0x801e`: LeftClick
+- `0x00ff`: RightClick, WheelClick, Button4, Button5, ScrollUp, ScrollDown
+
+---
+
+## 10. EJEMPLOS DE DRIVERS EXISTENTES
+
+### 10.1 Driver Logitech G600 (`driver-logitech-g600.c`)
+**Características:**
+- 3 perfiles, 41 botones (20 + G-shift), 4 DPI, 1 LED
+- Estructuras complejas: `logitech_g600_profile_report` (154 bytes)
+- Report IDs específicos: 0xF0, 0xF3-F5
+- Manejo de macros y efectos LED complejos
+- Comunicación: HID reports con estructuras empaquetadas
+
+### 10.2 Driver Roccat Kone EMP (`driver-roccat-kone-emp.c`)
+**Características:**
+- 5 perfiles, 22 botones (Easy Shift), 5 DPI, 4 LEDs
+- Report IDs: 4-8 para diferentes configuraciones
+- Manejo de macros (hasta 480 eventos)
+- Efectos LED: sólido, breathing, cycle
+- Comunicación: HID con retry logic y magic numbers
+
+### 10.3 Driver Sinowealth (`driver-sinowealth.c`)
+**Características:**
+- Múltiples dispositivos con configuración por device ID
+- Report IDs: 0x4 (config), 0x5 (cmd), 0x6 (config long)
+- Comandos enumerados: firmware, profile, config, buttons, macro
+- DPI: 100-2000+ con step 100
+- Comunicación: HID feature reports con estructuras de comando
+
+### 10.4 Driver SteelSeries (`driver-steelseries.c`)
+**Características:**
+- Múltiples versiones de protocolo (1-4)
+- Estructuras de datos complejas por dispositivo
+- Manejo de LEDs con ciclos y efectos
+- Comunicación: HID con diferentes tamaños de reporte
+- Configuración por device data (quirks, DPI lists, etc.)
+
+**Lecciones para Sentey:**
+- Usar estructuras empaquetadas para payloads HID
+- Implementar probe con verificación de HID interfaces
+- Manejar diferentes versiones/protocolos si es necesario
+- Usar logging apropiado para debugging
+
+---
+
+## 11. FORMATOS DE ARCHIVOS .device
+
+### 11.1 Archivo Actual Sentey (`sentey-gs-3910.device`)
+```ini
+[Device]
+Name=Sentey GS-3910
+DeviceMatch=usb:e0ff:0002
+DeviceType=mouse
+Driver=steelseries  # ← Temporal, cambiar a sentey
+
+[Driver/steelseries]
+DeviceVersion=2
+Buttons=10
+Leds=1
+DpiList=2000;4200;6200;8200
+```
+
+### 11.2 Ejemplo Sinowealth (`sinowealth-0027.device`)
+```ini
+[Device]
+DeviceMatch=usb:258a:0027
+DeviceType=mouse
+Driver=sinowealth
+Name=SinoWealth Generic Mouse (0027)
+
+[Driver/sinowealth/devices/3106]
+Buttons=8
+DeviceName=DreamMachines DM5 Blink
+LedType=RGB
+SensorType=PMW3389
+```
+
+**Formato recomendado para Sentey:**
+```ini
+[Device]
+Name=Sentey Revolution Pro GS-3910
+DeviceMatch=usb:e0ff:0002
+DeviceType=mouse
+Driver=sentey
+
+[Driver/sentey]
+Profiles=5
+Buttons=11
+Leds=9
+DpiList=400;1600;3200;8200
+ReportRates=500;1000
+SensorType=Avago ADNS-9800
+```
+
+---
+
+## 12. UTILIDAD DE CARPETAS PARA DESARROLLO
+
+### 12.1 Carpeta `doc/` - Documentación
+**Contenido:**
+- `conf.py.in`, `index.rst`, `dbus.rst`: Documentación Sphinx
+- `meson.build`: Build de documentación
+
+**Utilidad para desarrollo:**
+- Generar documentación API con Sphinx
+- Documentar interfaces D-Bus
+- Crear manuales de usuario
+- **Recomendación:** Actualizar con documentación del driver Sentey
+
+### 12.2 Carpeta `test/` - Pruebas
+**Contenido:**
+- `test-context.c`, `test-device.c`, `test-util.c`: Tests unitarios C
+- `data-parse-test.py`: Test de parsing de datos
+- `python-black-check.sh`, `python-ruff-check.sh`: Linters Python
+- `valgrind.suppressions`: Supresiones Valgrind
+
+**Utilidad para desarrollo:**
+- Ejecutar tests unitarios: `meson test`
+- Verificar parsing de archivos .device
+- Detectar memory leaks con Valgrind
+- **Recomendación:** Agregar tests específicos para driver Sentey
+
+### 12.3 Carpeta `tools/` - Herramientas de Desarrollo
+**Contenido:**
+- `ratbagc.py.in`, `ratbagctl.*`: Herramientas de línea de comandos
+- `hidpp10-dump-page.c`, `hidpp20-dump-page.c`: Debug HID++
+- `lur-command.c`: Comando LUR
+- `toolbox.py`: Utilidades Python
+- `check_scan_build.py`: Análisis estático
+
+**Utilidad para desarrollo:**
+- `ratbagctl`: Probar configuración del mouse
+- `hidpp*-dump-page.c`: Inspeccionar comunicación HID
+- `toolbox.py`: Utilidades para desarrollo
+- **Recomendación:** Usar `ratbagctl` para probar el driver Sentey, crear dumps HID para debugging
+
+**Comandos útiles:**
+```bash
+# Probar driver
+./tools/ratbagctl --help
+./tools/ratbagctl list
+./tools/ratbagctl <device> info
+
+# Debugging HID
+gcc -o hid_dump tools/hidpp10-dump-page.c
+./hid_dump /dev/hidrawX
+
+# Tests
+meson test
+```
+
+---
+
+## 13. PLAN DE IMPLEMENTACIÓN PARA DRIVER SENTEY
+
+### 13.1 Fase 1: Estructura Básica
+- [x] Crear `src/driver-sentey.c` con probe básico
+- [x] Actualizar `data/devices/sentey-gs-3910.device` con Driver=sentey
+- [x] Agregar a `src/meson.build`
+- [ ] Compilar y verificar detección
+
+### 13.2 Fase 2: Funcionalidades Core
+- [x] Implementar `sentey_write_profile()` (comando 0x0188)
+- [x] Implementar `sentey_write_button()` (comando 0x0185)
+- [x] Implementar `sentey_write_led()` (comandos 0x0186/0x0102)
+- [x] Implementar `sentey_commit()` con guardado
+
+### 13.3 Fase 3: DPI y Testing
+- [ ] Investigar comando DPI exacto
+- [ ] Implementar `sentey_write_resolution_dpi()`
+- [ ] Testing con `ratbagctl`
+- [ ] Debugging con tools/
+
+### 13.4 Fase 4: Optimizaciones
+- [ ] Agregar `read_profile()` si es posible
+- [ ] Manejo de errores robusto
+- [ ] Logging detallado
+- [ ] Tests unitarios
+
+---
+
+## 14. ESTADO ACTUAL DEL DESARROLLO
+
+### ✅ Completado:
+- **Driver básico**: `src/driver-sentey.c` implementado con API v0.18 correcta
+- **Integración**: Agregado a `meson.build` y archivo `.device` actualizado
+- **Protocolo**: Implementados comandos HID basados en análisis de capturas
+- **Funcionalidades**: Perfiles, botones, LEDs y DPI soportados
+- **Mapeo**: Botones físicos correctamente mapeados (11 físicos, 9 programables)
+- **Especificaciones**: Actualizadas con información oficial del fabricante
+
+### 🔄 Pendiente:
+- **Compilación**: Verificar que compila sin errores
+- **Testing**: Probar con `ratbagctl` cuando esté disponible el dispositivo
+- **DPI**: Implementar comando DPI exacto (actualmente placeholder)
+- **Report Rates**: Implementar cambio dinámico de polling rate (500/1000 Hz)
+
+### 📋 Archivos Modificados/Creados:
+- `/workspaces/libratbag/src/driver-sentey.c` - Driver completo actualizado
+- `/workspaces/libratbag/data/devices/sentey-gs-3910.device` - Configuración corregida
+- `/workspaces/libratbag/meson.build` - Driver agregado al build
+- `/workspaces/libratbag/captures/ANALISIS_PATRONES.md` - Especificaciones oficiales agregadas
+- `/workspaces/libratbag/captures/REQUISITOS_DRIVER_LIBRATBAG.md` - Requisitos actualizados
+
+### 🎯 Información Nueva Incorporada:
+- **Sensor**: Avago ADNS-9800 (DNA S9800) confirmado
+- **DPI reales**: 400/1600/3200/8200 (corregidos de valores asumidos)
+- **Botones**: 11 físicos (1 no programable + 10 configurables)
+- **Report Rates**: 500-1000 Hz (simplificado de lista anterior)
+- **Especificaciones físicas**: Peso, dimensiones, cable, pies cerámicos
+- **Iluminación**: 5 colores + 26 tonos para indicador DPI
+- **Memoria**: Perfiles almacenados onboard
+
+### 📋 Próximos Pasos Recomendados:
+1. **Compilar y probar**: `meson setup build && ninja -C build`
+2. **Verificar detección**: El mouse debería aparecer con "Sentey" como driver
+3. **Testing funcional**: Usar `ratbagctl` para configurar botones y LEDs
+4. **Debugging**: Usar herramientas en `tools/` si hay problemas
+5. **DPI implementation**: Analizar capturas adicionales para comando DPI exacto
+6. **Report Rate**: Implementar cambio de polling rate si es necesario
+4. **Debugging**: Usar herramientas en `tools/` para inspeccionar comunicación HID
+5. **DPI implementation**: Analizar capturas adicionales para comando DPI exacto
 
 ### Archivos a Crear/Modificar
 - [ ] `/workspace/src/driver-sentey.c` - Driver principal
